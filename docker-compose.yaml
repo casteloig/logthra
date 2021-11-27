@@ -1,0 +1,17 @@
+version: "3"
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:21.8.11
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+
+  ingester:
+    image: casteloig/log-ingester:0.1
+    ports:
+      - "9010:9010"
+    depends_on:
+      - clickhouse
+    healthcheck:
+      test: ["CMD", "telnet clickhouse 9000"]
