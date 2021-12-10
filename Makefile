@@ -7,7 +7,7 @@ GOGET=$(GOCMD) get
 BINARY_NAME=log-ingester
 
 
-GO_OPT= -mod vendor
+GO_OPT= -mod vendor -race
 
 .PHONY: build
 build:

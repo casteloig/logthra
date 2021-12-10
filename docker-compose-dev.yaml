@@ -1,0 +1,22 @@
+version: "3"
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:21.9.6
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+
+  ingester:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - "9010:9010"
+    depends_on:
+      - clickhouse
+    volumes:
+      - wal-ingester-vol:/home/log-ingester
+
+volumes:
+  wal-ingester-vol:

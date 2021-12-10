@@ -4,26 +4,48 @@ import (
 	"database/sql"
 	"fmt"
 	logging "log"
+	"sync"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go"
+	wal "github.com/tidwall/wal"
 )
 
-type BatchReceived struct {
+type RequestReceived struct {
 	Streams []struct {
 		Stream map[string]string `json:"stream"`
 		Values [][2]string `json:"values"`
 	} `json:"streams"` 
 }
 
+type Queue struct {
+	mutex sync.Mutex
+	qu []RequestReceived
+}
+
+type WalStruct struct {
+	l *wal.Log
+	index uint64
+}
+
+var queue Queue
+var w WalStruct
+var delta1 float64
+//var delta2 float64
+
+const (
+	layoutISO = "2006-01-02"
+	walDirPath = "/home/log-ingester"
+)
 
 func main() {
-
-	connect, err := sql.Open("clickhouse", "tcp://clickhouse:9000?debug=true")
 	
+	time.Sleep(time.Second*2)
+	// Creation of the connection and setup database if not done before
+	connect, err := sql.Open("clickhouse", "tcp://clickhouse:9000?debug=true")
 	if err != nil {
 		logging.Fatal(err)
 	}
-
 	if err := connect.Ping(); err != nil {
 		if exception, ok := err.(*clickhouse.Exception); ok {
 			fmt.Printf("[%d] %s \n%s\n", exception.Code, exception.Message, exception.StackTrace)
@@ -32,15 +54,13 @@ func main() {
 		}
 		return
 	}
-
 	_, err = connect.Exec("CREATE DATABASE IF NOT EXISTS logs")
 	if err != nil {
 		logging.Fatal(err)
 	}
-
 	_, err = connect.Exec(`
 		CREATE TABLE IF NOT EXISTS logs.log(
-			label Map(String, String),
+			label Array(String),
 			timestamp Date,
 			msg String
 		)
@@ -51,48 +71,75 @@ func main() {
 		logging.Fatal(err)
 	}
 
-	createAPI(connect)
+
+	// Initialize goroutines:
+	// 1º: send queue to database each X seconds
+	// 2º: create api and keep serving connections while work is done
+
+	go sendQueue(connect)
+	createAPI()
+
 }
 
-func createInsert (connect *sql.DB, logs BatchReceived) {
+
+func sendQueue(connect *sql.DB) {
+	for {
+		time.Sleep(time.Second*10)
+
+		queue.mutex.Lock()
+		if len(queue.qu) != 0 {
+			start := time.Now()
+			createInsert(connect)
+			end := time.Now()
+			delta1 = end.Sub(start).Seconds()
+			logging.Println(delta1)
+			queue.qu = nil	
+		}
+		queue.mutex.Unlock()
+	}
+}
+
+
+
+
+
+func createInsert (connect *sql.DB) {
+	logging.Println(queue.qu)
 	tx, err := connect.Begin()
 	if err != nil {
 		logging.Fatal(err)
 	}
 
-	var stmString string
-	for i := 0; i<len(logs.Streams); i++ {
-		// This happens in every stream
-		stmString = "INSERT INTO logs.log SELECT map("
+	stmt, err := tx.Prepare("INSERT INTO logs.log (label, timestamp, msg) VALUES (?,?,?)")
+	if err != nil {
+		logging.Fatal(err)
+	}
 
-		// We group all labels of the stream
-		count := 0
-		for k, e := range logs.Streams[i].Stream {
-			count++
-			stmString += "'" + k + "'" + "," + "'" + e + "'"
-			if count < len(logs.Streams[i].Stream) {
-				stmString += ","
-			} else if count == len(logs.Streams[i].Stream) {
-				stmString += "),"
-			}
-		}
-
-		for _, row := range logs.Streams[i].Values {
-			stmWorking := stmString
-			stmWorking += row[0] + "," + "'" + row[1] + "'"
+	var sliceLabel []string
+	for q := 0; q<len(queue.qu); q++ {
+		for i := 0; i<len(queue.qu[q].Streams); i++ {
+			// This happens in every stream
 			
-			statement, err := tx.Prepare(stmWorking)
-			if err != nil {
-				logging.Fatal(err)
-			}
-			_, err = statement.Exec()
-			if err != nil {
-				logging.Fatal(err)
+			count := 0
+			for k, e := range queue.qu[q].Streams[i].Stream {
+				count++
+				sliceLabel = append(sliceLabel, k + ":" + e)
 			}
 
-			fmt.Println(stmWorking)
+			for _, row := range queue.qu[q].Streams[i].Values {
+				tim, _ := time.Parse(layoutISO, row[0])
+				_, err = stmt.Exec(sliceLabel, tim, row[1])
+				if err != nil {
+					logging.Fatal(err)
+				}
+				logging.Println(sliceLabel)
+				logging.Println(row[0])
+				logging.Println(row[1])
+			}
+
 		}
 	}
+	
 	err = tx.Commit()
 		if err != nil {
 			logging.Fatal(err)
