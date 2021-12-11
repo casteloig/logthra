@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -26,8 +28,19 @@ func pushHandler() http.Handler {
 				logging.Fatal(err)
 			}
 
-			fmt.Println(logs)
+			buf := encodeToBytes(logs)
+		
+
 			queue.mutex.Lock()
+			lastIndex, err := queue.myWal.l.LastIndex()
+			if err != nil {
+				logging.Fatal(err)
+			}
+			err = queue.myWal.l.Write(lastIndex+1, buf)
+			if err != nil {
+				logging.Fatal(err)
+			}
+			
 			queue.qu = append(queue.qu, logs)
 			queue.mutex.Unlock()
 		}
@@ -44,4 +57,16 @@ func createAPI() {
 	if err != nil {
 		logging.Fatal(err)
 	}
+}
+
+
+func encodeToBytes(p interface{}) []byte  {
+	buf := bytes.Buffer{}
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(p)
+	if err != nil {
+		logging.Fatal(err)
+	}
+	
+	return buf.Bytes()
 }

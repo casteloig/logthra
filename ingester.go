@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/gob"
 	"fmt"
 	logging "log"
+	"os"
 	"sync"
 	"time"
 
@@ -21,25 +24,24 @@ type RequestReceived struct {
 type Queue struct {
 	mutex sync.Mutex
 	qu []RequestReceived
+	myWal WalStruct
 }
 
 type WalStruct struct {
 	l *wal.Log
-	index uint64
 }
 
 var queue Queue
-var w WalStruct
-var delta1 float64
-//var delta2 float64
 
 const (
 	layoutISO = "2006-01-02"
-	walDirPath = "/home/log-ingester"
+	walDirPath = "/home/log-ingester/"
 )
 
 func main() {
-	
+
+	var err error
+
 	time.Sleep(time.Second*2)
 	// Creation of the connection and setup database if not done before
 	connect, err := sql.Open("clickhouse", "tcp://clickhouse:9000?debug=true")
@@ -72,6 +74,19 @@ func main() {
 	}
 
 
+	queue.myWal.l, err = wal.Open(walDirPath, nil)
+	if err != nil {
+		logging.Fatal(err)
+	}
+	defer queue.myWal.l.Close()
+
+	queue.mutex.Lock()
+	err = recoverWal()
+	if err != nil {
+		logging.Fatal(err)
+	}
+	queue.mutex.Unlock()
+
 	// Initialize goroutines:
 	// 1º: send queue to database each X seconds
 	// 2º: create api and keep serving connections while work is done
@@ -88,19 +103,43 @@ func sendQueue(connect *sql.DB) {
 
 		queue.mutex.Lock()
 		if len(queue.qu) != 0 {
-			start := time.Now()
 			createInsert(connect)
-			end := time.Now()
-			delta1 = end.Sub(start).Seconds()
-			logging.Println(delta1)
-			queue.qu = nil	
+			queue.qu = nil
+			lastIndex, err := queue.myWal.l.LastIndex()
+			if err != nil {
+				logging.Fatal(err)
+			} else if lastIndex != 0{
+				queue.myWal.l.Close()
+				os.RemoveAll(walDirPath)
+				queue.myWal.l, err = wal.Open(walDirPath, nil)
+				if err != nil {
+					logging.Fatal(err)
+				}
+			}
 		}
 		queue.mutex.Unlock()
+
+
+
+
+
+		lastIndex, err := queue.myWal.l.LastIndex()
+		if err != nil {
+			logging.Fatal(err)
+		} else if lastIndex != 0{
+			logging.Println("Despues de mandar queue nos encontramos con...")
+			for i := 1; i <= int(lastIndex); i++ {
+				data, _ := queue.myWal.l.Read(uint64(i))
+				queue.qu = append(queue.qu, decodeToRequestReceived(data))
+				logging.Println(decodeToRequestReceived(data))
+			} 
+		}
+
+
+
+		
 	}
 }
-
-
-
 
 
 func createInsert (connect *sql.DB) {
@@ -117,6 +156,7 @@ func createInsert (connect *sql.DB) {
 
 	var sliceLabel []string
 	for q := 0; q<len(queue.qu); q++ {
+		sliceLabel = nil
 		for i := 0; i<len(queue.qu[q].Streams); i++ {
 			// This happens in every stream
 			
@@ -144,4 +184,36 @@ func createInsert (connect *sql.DB) {
 		if err != nil {
 			logging.Fatal(err)
 		}
+}
+
+
+func recoverWal() error {
+	lastIndex, err := queue.myWal.l.LastIndex()
+	if err != nil {
+		return err
+	} else if lastIndex != 0{
+		for i := 1; i <= int(lastIndex); i++ {
+			data, err := queue.myWal.l.Read(uint64(i))
+			logging.Println(data)
+			if err != nil {
+				return err
+			}
+			queue.qu = append(queue.qu, decodeToRequestReceived(data))
+			logging.Println(decodeToRequestReceived(data))
+		} 
+	}
+
+	return nil
+}
+
+
+func decodeToRequestReceived(s []byte) RequestReceived {
+
+	r := RequestReceived{}
+	dec := gob.NewDecoder(bytes.NewReader(s))
+	err := dec.Decode(&r)
+	if err != nil {
+		logging.Fatal(err)
+	}
+	return r
 }
