@@ -28,9 +28,15 @@ func pushHandler() http.Handler {
 				logging.Fatal(err)
 			}
 
-			buf := encodeToBytes(logs)
-		
+			tenantID := r.Header.Get("tenant-id")
+			if len(tenantID) != 10 {
+				logging.Println("tenant-id invalid (has to be lenght 10)")
+				http.Error(w, "Header is not correct", http.StatusBadRequest)
+				return
+			}
+			logs.TenantID = tenantID
 
+			buf := encodeToBytes(logs)
 			queue.mutex.Lock()
 			lastIndex, err := queue.myWal.l.LastIndex()
 			if err != nil {
@@ -41,8 +47,11 @@ func pushHandler() http.Handler {
 				logging.Fatal(err)
 			}
 			
+			logging.Println(logs)
 			queue.qu = append(queue.qu, logs)
 			queue.mutex.Unlock()
+		} else {
+			http.Error(w, "Only POST methods are supported", http.StatusNotFound)
 		}
 	})
 }

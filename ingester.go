@@ -15,6 +15,7 @@ import (
 )
 
 type RequestReceived struct {
+	TenantID string
 	Streams []struct {
 		Stream map[string]string `json:"stream"`
 		Values [][2]string `json:"values"`
@@ -37,6 +38,7 @@ const (
 	layoutISO = "2006-01-02"
 	walDirPath = "/home/log-ingester/"
 )
+
 
 func main() {
 
@@ -62,6 +64,7 @@ func main() {
 	}
 	_, err = connect.Exec(`
 		CREATE TABLE IF NOT EXISTS logs.log(
+			tenant_id FixedString(10),
 			label Array(String),
 			timestamp Date,
 			msg String
@@ -120,22 +123,15 @@ func sendQueue(connect *sql.DB) {
 		queue.mutex.Unlock()
 
 
-
-
-
 		lastIndex, err := queue.myWal.l.LastIndex()
 		if err != nil {
 			logging.Fatal(err)
 		} else if lastIndex != 0{
-			logging.Println("Despues de mandar queue nos encontramos con...")
 			for i := 1; i <= int(lastIndex); i++ {
 				data, _ := queue.myWal.l.Read(uint64(i))
 				queue.qu = append(queue.qu, decodeToRequestReceived(data))
-				logging.Println(decodeToRequestReceived(data))
 			} 
 		}
-
-
 
 		
 	}
@@ -143,13 +139,12 @@ func sendQueue(connect *sql.DB) {
 
 
 func createInsert (connect *sql.DB) {
-	logging.Println(queue.qu)
 	tx, err := connect.Begin()
 	if err != nil {
 		logging.Fatal(err)
 	}
 
-	stmt, err := tx.Prepare("INSERT INTO logs.log (label, timestamp, msg) VALUES (?,?,?)")
+	stmt, err := tx.Prepare("INSERT INTO logs.log (tenant_id, label, timestamp, msg) VALUES (?,?,?,?)")
 	if err != nil {
 		logging.Fatal(err)
 	}
@@ -168,15 +163,11 @@ func createInsert (connect *sql.DB) {
 
 			for _, row := range queue.qu[q].Streams[i].Values {
 				tim, _ := time.Parse(layoutISO, row[0])
-				_, err = stmt.Exec(sliceLabel, tim, row[1])
+				_, err = stmt.Exec(queue.qu[q].TenantID, sliceLabel, tim, row[1])
 				if err != nil {
 					logging.Fatal(err)
 				}
-				logging.Println(sliceLabel)
-				logging.Println(row[0])
-				logging.Println(row[1])
 			}
-
 		}
 	}
 	
@@ -199,7 +190,6 @@ func recoverWal() error {
 				return err
 			}
 			queue.qu = append(queue.qu, decodeToRequestReceived(data))
-			logging.Println(decodeToRequestReceived(data))
 		} 
 	}
 
