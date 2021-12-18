@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package="model/proto";
+
+message RequestReceivedProto {
+    string TenantID = 1;
+	repeated Strms Streams  = 2;
+}
+
+message Strms {
+    map<string, string> Stream = 1;
+	repeated OneDimValue TwoDimValue = 2;
+
+}
+
+message OneDimValue {
+	string valTime = 1;
+	string valMsg = 2;
+}
+
+
+
+message Response {
+	string result = 1;
+}
+
+service IngesterService {
+	rpc PushToIngester(RequestReceivedProto) returns (Response) {};
+}
