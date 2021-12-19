@@ -9,14 +9,24 @@ services:
 
   ingester:
     build:
-      context: ./
+      context: ./ingester
+      dockerfile: Dockerfile
+    ports:
+      - "9011:9011"
+    depends_on:
+      - clickhouse
+    volumes:
+      - wal-ingester-vol:/home/log-ingester
+
+    
+  api:
+    build:
+      context: ./api
       dockerfile: Dockerfile
     ports:
       - "9010:9010"
     depends_on:
       - clickhouse
-    volumes:
-      - wal-ingester-vol:/home/log-ingester
 
 volumes:
   wal-ingester-vol:
