@@ -130,8 +130,10 @@ func main() {
 
 // Empty the queue and create all inserts
 func sendQueue(connect *sql.DB) {
-	for {
-		time.Sleep(time.Second*10)
+	ticker := time.NewTicker(30 * time.Second)
+	logging.Println("antes")
+	for range ticker.C {
+		logging.Println("ticking...")
 		// TODO: REPLACE SLEEP FOR TICKERS 
 		queue.mutex.Lock()
 		if len(queue.qu) != 0 {
