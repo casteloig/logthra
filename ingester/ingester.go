@@ -134,7 +134,6 @@ func sendQueue(connect *sql.DB) {
 	logging.Println("antes")
 	for range ticker.C {
 		logging.Println("ticking...")
-		// TODO: REPLACE SLEEP FOR TICKERS 
 		queue.mutex.Lock()
 		if len(queue.qu) != 0 {
 			createInsert(connect)

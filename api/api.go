@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+var limiter = NewIPRateLimiter()
 
 func pushHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,11 +83,35 @@ func pushHandler() http.Handler {
 
 
 func main() {
+	mux := http.NewServeMux()
+	mux.Handle("/api/push", pushHandler())
+
+	err := http.ListenAndServe(":9010", limitMiddleware(mux))
+	logging.Println("Listening :9010")
+	if err != nil {
+		logging.Fatal(err)
+	}
+
+
+/* 
 	http.Handle("/api/push", pushHandler())
 
 	err := http.ListenAndServe(":9010", nil)
 	logging.Println("Listening :9010")
 	if err != nil {
 		logging.Fatal(err)
-	}
+	} */
+}
+
+
+func limitMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        limiter := limiter.GetLimiter(r.Header.Get("tenant-id"))
+        if !limiter.Allow() {
+            http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+            return
+        }
+
+        next.ServeHTTP(w, r)
+    })
 }
