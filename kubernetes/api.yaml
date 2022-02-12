@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-deployment
+  labels:
+    app: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: casteloig/log-ingester-api:1.0
+        ports:
+        - containerPort: 9010
+        env:
+        - name: CONFIG_INGESTER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: api-configmap
+              key: ingester_url
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9010
+          failureThreshold: 1
+          periodSeconds: 60
+          timeoutSeconds: 3
+        
+---
+# Internal Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+spec:
+  selector:
+    app: api
+  type: LoadBalancer
+  ports:
+    - protocol: TCP
+      port: 9010
+      targetPort: 9010
+
+---
+# ConfigMap to ingester-service
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-configmap
+data:
+  ingester_url: ingester-service

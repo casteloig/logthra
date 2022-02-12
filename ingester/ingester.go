@@ -69,13 +69,11 @@ func (s *server) PushToIngester(ctx context.Context, message *pb.RequestReceived
 func main() {
 
 	var err error
-
-	// Create gRPC server and listen to connections
-	go createGRPCServer()
 	time.Sleep(time.Second*2)
 
 	// Creation of the connection and setup database if not done before
-	connect, err := sql.Open("clickhouse", "tcp://clickhouse:9000?debug=true")
+	url := os.Getenv("CONFIG_DATABASE_URL")
+	connect, err := sql.Open("clickhouse", "tcp://"+ url + ":9000?debug=true")
 	if err != nil {
 		logging.Fatal(err)
 	}
@@ -119,6 +117,9 @@ func main() {
 	}
 	queue.mutex.Unlock()
 
+	// Create gRPC server and listen to connections
+	go createGRPCServer()
+	os.Mkdir("tmp/health", 0744)
 	// Initialize goroutines:
 	// 1º: send queue to database each X seconds
 	// 2º: create api and keep serving connections while work is done

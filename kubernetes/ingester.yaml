@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingester-deployment
+  labels:
+    app: ingester
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ingester
+  template:
+    metadata:
+      labels:
+        app: ingester
+    spec:
+      containers:
+      - name: ingester
+        image: casteloig/log-ingester:1.0
+        ports:
+        - containerPort: 9011
+        env:
+        - name: CONFIG_DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: ingester-configmap
+              key: database_url
+        readinessProbe:
+          exec:
+            command:
+            - cat
+            - /tmp/health
+          failureThreshold: 5
+          periodSeconds: 10
+        
+---
+# Internal Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingester-service
+spec:
+  selector:
+    app: ingester
+  ports:
+    - protocol: TCP
+      port: 9011
+      targetPort: 9011
+
+---
+# ConfigMap to ingester-service
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingester-configmap
+data:
+  database_url: database-service

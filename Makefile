@@ -21,9 +21,14 @@ install:
 
 .PHONY: dbuild
 dbuild:
-	@docker build -t casteloig/log-ingester:0.2 ./ingester
-	@docker build -t casteloig/log-ingester-api:0.2 ./api
+	@docker build -t casteloig/log-ingester:1.0 ./ingester
+	@docker build -t casteloig/log-ingester-api:1.0 ./api
 
 .PHONY: drun
 drun:
 	@docker run -d --name log-ingester -p 9010:9010 log-ingester:latest
+	
+.PHONY: dupload
+dupload:
+	@docker push casteloig/log-ingester:1.0
+	@docker push casteloig/log-ingester-api:1.0

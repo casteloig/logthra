@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	logging "log"
 	"net/http"
+	"os"
 	"time"
 
 	model "log_tool/model"
@@ -17,7 +18,7 @@ import (
 
 var limiter = NewIPRateLimiter()
 
-func pushHandler() http.Handler {
+func pushHandler(conn *grpc.ClientConn) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("asked for push: ", r.Method)
 		if r.Method == "POST" {
@@ -26,10 +27,12 @@ func pushHandler() http.Handler {
 			body, err := ioutil.ReadAll(r.Body)
 			if err != nil {
 				logging.Fatal(err)
+				http.Error(w, "Bad body message", http.StatusBadRequest)
 			}
 			err = json.Unmarshal(body, &logs)
 			if err != nil {
 				logging.Fatal(err)
+				http.Error(w, "Bad body message", http.StatusBadRequest)
 			}
 
 			tenantID := r.Header.Get("tenant-id")
@@ -56,11 +59,6 @@ func pushHandler() http.Handler {
 				r.Streams = append(r.Streams, strms)
 			}
 			
-			conn, err := grpc.Dial("ingester:9011", grpc.WithInsecure())
-			if err != nil {
-				logging.Fatal(err)
-			}
-			defer conn.Close()
 
 			c := pb.NewIngesterServiceClient(conn)
 
@@ -70,6 +68,7 @@ func pushHandler() http.Handler {
 			response, err := c.PushToIngester(ctx, r)
 			if err != nil {
 				logging.Fatal(err)
+				http.Error(w, "Header is not correct", http.StatusServiceUnavailable)
 			}
 
 			logging.Println(response)
@@ -80,27 +79,30 @@ func pushHandler() http.Handler {
 	})
 }
 
+func health (w http.ResponseWriter, r *http.Request){
+	w.WriteHeader(http.StatusOK)
+}
 
 
 func main() {
-	mux := http.NewServeMux()
-	mux.Handle("/api/push", pushHandler())
 
-	err := http.ListenAndServe(":9010", limitMiddleware(mux))
+	url := os.Getenv("CONFIG_INGESTER_URL")
+	conn, err := grpc.Dial(url + ":9011", grpc.WithInsecure())
+	if err != nil {
+		logging.Fatal(err)
+	}
+	defer conn.Close()
+
+	mux := http.NewServeMux()
+	mux.Handle("/api/push", pushHandler(conn))
+	mux.HandleFunc("/api/health", health)
+
+	err = http.ListenAndServe(":9010", limitMiddleware(mux))
 	logging.Println("Listening :9010")
 	if err != nil {
 		logging.Fatal(err)
 	}
 
-
-/* 
-	http.Handle("/api/push", pushHandler())
-
-	err := http.ListenAndServe(":9010", nil)
-	logging.Println("Listening :9010")
-	if err != nil {
-		logging.Fatal(err)
-	} */
 }
 
 

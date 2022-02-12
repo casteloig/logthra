@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: database-deployment
+  labels:
+    app: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+    spec:
+      containers:
+      - name: database
+        image: clickhouse/clickhouse-server:21.9.6
+        ports:
+        - containerPort: 9000
+        - containerPort: 8123
+
+        
+---
+# Internal Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: database-service
+spec:
+  selector:
+    app: database
+  ports:
+    - protocol: TCP
+      port: 9000
+      targetPort: 9000
+
+---
+# Another external service for 8123 port????????''
