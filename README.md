@@ -3,14 +3,14 @@
 ![Go Version](https://img.shields.io/badge/go-1.18+-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**Logthra** is a log ingestion prototype written in Go. Inspired by [Grafana Loki](https://grafana.com/oss/loki/), it exposes a `/api/push` endpoint and stores structured logs into a ClickHouse database using a gRPC-based ingester.
+
 <div align="center">
   <img src="assets/images/logthra.png" width="260" alt="Logthra Logo" />
 </div>
 
 
 ---
-
-**LogTool** is a log ingestion prototype written in Go. Inspired by [Grafana Loki](https://grafana.com/oss/loki/), it exposes a `/api/push` endpoint and stores structured logs into a ClickHouse database using a gRPC-based ingester.
 
 > ⚠️ This project is in early development.
 
